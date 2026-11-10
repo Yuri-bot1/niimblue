@@ -187,11 +187,10 @@
     return FileUtils.makeExportedLabel(fabricCanvas!, labelProps, csvEnabled);
   };
 
-  const onLoadRequested = (label: ExportedLabelTemplate) => {
-    loadLabelData(label).then(() => {
-      undo.push(fabricCanvas!, labelProps);
-      hasUnsavedChanges = false;
-    });
+  const onLoadRequested = async (label: ExportedLabelTemplate) => {
+    await loadLabelData(label);
+    undo.push(fabricCanvas!, labelProps);
+    hasUnsavedChanges = false;
   };
 
   const onSave = () => {
@@ -326,7 +325,7 @@
       });
 
       if (confirmResult === "yes") {
-        onLoadRequested(urlTemplate);
+        await onLoadRequested(urlTemplate);
         Toasts.message($tr("params.saved_labels.load.url.loaded"));
         return true;
       }
@@ -347,7 +346,7 @@
       const defaultTemplate = LocalStoragePersistence.loadDefaultTemplate();
 
       if (defaultTemplate !== null) {
-        onLoadRequested(defaultTemplate);
+        await onLoadRequested(defaultTemplate);
         return;
       }
     } catch (e) {

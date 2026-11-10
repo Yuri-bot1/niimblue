@@ -16,7 +16,7 @@
 
   interface Props {
     onRequestLabelTemplate: () => ExportedLabelTemplate;
-    onLoadRequested: (label: ExportedLabelTemplate) => void;
+    onLoadRequested: (label: ExportedLabelTemplate) => void | Promise<void>;
     onClose?: () => void;
     onSave?: () => void;
     canvas: fabric.Canvas;
@@ -202,7 +202,7 @@
       }
     }
 
-    onLoadRequested(label);
+    await onLoadRequested(label);
     modalRef.hide();
   };
 

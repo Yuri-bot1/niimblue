@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, tick, untrack } from "svelte";
   import { derived } from "svelte/store";
   import { connectionState, printerClient, printerInfo, printerMeta, rfidInfo } from "$/stores/app";
   import * as effects from "$/utils/post_process";
@@ -459,11 +459,14 @@
 
     csvParsed = enabled ? parseCsvData(data) : Object.assign([], { columns: [] });
     pagesTotal = enabled ? csvParsed.length : 1;
-    currentPage = Math.max(0, Math.min(pagesTotal - 1, currentPage));
-    void generatePreviewData(currentPage);
+    currentPage = untrack(() => Math.max(0, Math.min(pagesTotal - 1, currentPage)));
+    const page = untrack(() => currentPage);
+    void generatePreviewData(page);
   });
 
   onMount(async () => {
+    await tick();
+
     if (csvEnabled) {
       csvParsed = parseCsvData(csvData);
       pagesTotal = csvParsed.length;
