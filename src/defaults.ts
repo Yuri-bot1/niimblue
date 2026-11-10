@@ -102,4 +102,4 @@ export const APP_CONFIG_DEFAULTS: AppConfig = {
   gridEnabled: false
 };
 
-export const CSV_DEFAULT = "var1,var2\n123,456\n777,888";
+export const CSV_DEFAULT = "123,456\n777,888";

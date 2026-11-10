@@ -43,7 +43,11 @@ export const printerInfo = writable<PrinterInfo>();
 export const rfidInfo = writable<CombinedRfidInfo>({});
 export const printerMeta = writable<PrinterModelMeta | undefined>();
 export const heartbeatFails = writable<number>(0);
-export const csvData = writablePersisted<CsvParams>("csv_params", CsvParamsSchema, { data: CSV_DEFAULT });
+export const csvData = writablePersisted<CsvParams>("csv_params", CsvParamsSchema, {
+  data: CSV_DEFAULT,
+  headers: "var1,var2",
+  separator: ",",
+});
 export const dimensionsUpdateRequest = writable<{width: number, height: number} | null>(null);
 
 userFonts.subscribe(FileUtils.loadFonts);

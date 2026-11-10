@@ -17,11 +17,18 @@
     printTasksCapabilities,
     PrintTaskCapability as TaskCap,
   } from "@mmote/niimbluelib";
-  import { type LabelProps, type PostProcessType, type FabricJson, type PreviewProps, previewPropsKeys } from "$/types";
+  import {
+    type CsvParams,
+    type LabelProps,
+    type PostProcessType,
+    type FabricJson,
+    type PreviewProps,
+    previewPropsKeys,
+  } from "$/types";
   import ParamLockButton from "$/components/basic/ParamLockButton.svelte";
   import { tr, type TranslationKey } from "$/utils/i18n";
   import { canvasPreprocess } from "$/utils/canvas_preprocess";
-  import { type DSVRowArray, csvParse } from "d3-dsv";
+  import { type DSVRowArray, dsvFormat } from "d3-dsv";
   import { LocalStoragePersistence } from "$/utils/persistence";
   import MdIcon from "$/components/basic/MdIcon.svelte";
   import { Toasts } from "$/utils/toasts";
@@ -34,11 +41,24 @@
     canvasCallback: () => FabricJson;
     onClose?: () => void;
     printNow?: boolean;
-    csvData: string;
+    csvData: CsvParams;
     csvEnabled: boolean;
+    inline?: boolean;
+    viewMode?: "edit" | "preview";
+    showPrintSettings?: boolean;
   }
 
-  let { labelProps, canvasCallback, printNow = false, csvData, csvEnabled, onClose }: Props = $props();
+  let {
+    labelProps,
+    canvasCallback,
+    printNow = false,
+    csvData,
+    csvEnabled,
+    inline = false,
+    viewMode = "preview",
+    showPrintSettings = false,
+    onClose,
+  }: Props = $props();
 
   let previewCanvas: HTMLCanvasElement;
   let printState = $state<"idle" | "printing">("idle");
@@ -188,7 +208,11 @@
     $printerClient.startHeartbeat();
 
     if (printNow && !error) {
-      modalRef.hide();
+      if (inline) {
+        onClose?.();
+      } else {
+        modalRef.hide();
+      }
     }
   };
 
@@ -241,7 +265,6 @@
       previewContext.fillRect(0, 0, previewCanvas.width, previewCanvas.height);
       previewContext.putImageData(iData, Math.max(params.offset.x, 0), Math.max(params.offset.y, 0));
     }
-
 
     let headSize = -1;
 
@@ -346,6 +369,33 @@
     generatePreviewData(currentPage);
   };
 
+  const parseCsvData = (csv: CsvParams): DSVRowArray<string> => {
+    const parser = dsvFormat(csv.separator);
+    const parseResult = parser.parse(csv.data ? `${csv.headers}\n${csv.data}` : csv.headers);
+    const spread: DSVRowArray<string> = Object.assign([], { columns: parseResult.columns });
+
+    for (const row of parseResult) {
+      for (const key of Object.keys(row)) {
+        row[key] = row[key].replaceAll("\\n", "\n");
+      }
+
+      let times = 1;
+      if ("$times" in row && row["$times"] !== "") {
+        times = parseInt(row["$times"]);
+      }
+
+      if (times < 0) {
+        times = 0;
+      }
+
+      for (let i = 0; i < times; i++) {
+        spread.push(row);
+      }
+    }
+
+    return spread;
+  };
+
   const generatePreviewData = async (page: number): Promise<void> => {
     const fabricTempCanvas = new CustomCanvas(undefined, {
       width: labelProps.size.width,
@@ -398,36 +448,24 @@
     return printTasksCapabilities[params.printTaskName].includes(cap);
   };
 
+  $effect(() => {
+    const data = { ...csvData };
+    const enabled = csvEnabled;
+    const mode = viewMode;
+
+    if (!previewCanvas || !originalImage || mode !== "preview") {
+      return;
+    }
+
+    csvParsed = enabled ? parseCsvData(data) : Object.assign([], { columns: [] });
+    pagesTotal = enabled ? csvParsed.length : 1;
+    currentPage = Math.max(0, Math.min(pagesTotal - 1, currentPage));
+    void generatePreviewData(currentPage);
+  });
+
   onMount(async () => {
     if (csvEnabled) {
-      const parseResult = csvParse(csvData);
-      const spread: DSVRowArray<string> = Object.assign([], { columns: parseResult.columns });
-
-      for (let row of parseResult) {
-        for (const k of Object.keys(row)) {
-          row[k] = row[k].replaceAll("\\n", "\n");
-        }
-
-        let times = 1;
-
-        if ("$times" in row && row["$times"] !== "") {
-          try {
-            times = parseInt(row["$times"]);
-          } catch (e) {
-            console.warn("$times parse error", e);
-          }
-        }
-
-        if (times < 0) {
-          times = 0;
-        }
-
-        for (let i = 0; i < times; i++) {
-          spread.push(row);
-        }
-      }
-
-      csvParsed = spread;
+      csvParsed = parseCsvData(csvData);
       pagesTotal = csvParsed.length;
     }
 
@@ -456,8 +494,15 @@
   });
 </script>
 
-<AppModal title={$tr("preview.title")} onClose={onModalClose} bind:this={modalRef} size="lg">
-  <div class="d-flex justify-content-center">
+<AppModal
+  title={$tr(viewMode === "edit" ? "preview.settings" : "preview.title")}
+  onClose={onModalClose}
+  bind:this={modalRef}
+  size="lg"
+  footerClass={viewMode === "preview" ? "preview-only-actions" : ""}
+  visible={viewMode !== "edit" || showPrintSettings}
+  {inline}>
+  <div class:d-none={viewMode !== "preview"} class="d-flex justify-content-center">
     {#if pagesTotal > 1}
       <button disabled={printState !== "idle"} class="btn w-100 fs-1" onclick={pageDown}>
         <MdIcon icon="chevron_left" />
@@ -473,7 +518,7 @@
     {/if}
   </div>
 
-  <div class="text-center">
+  <div class:d-none={viewMode !== "preview"} class="text-center">
     {#if pagesTotal > 1}<div>Page {currentPage + 1} / {pagesTotal}</div>{/if}
 
     {#if printState === "printing"}
@@ -496,7 +541,7 @@
 
   {#snippet footer()}
     {#each warnings as line (line)}
-        <span class="text-warning w-100">{line}</span>
+      <span class="text-warning w-100">{line}</span>
     {/each}
 
     <div class="input-group input-group-sm">
@@ -900,34 +945,44 @@
         savedValue={savedProps.offset}
         onClick={toggleSavedProp} />
     </div>
+    {#if viewMode === "preview"}
+      {#if !inline}
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{$tr("preview.close")}</button>
+      {/if}
 
-    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{$tr("preview.close")}</button>
+      {#if printState !== "idle"}
+        <button type="button" class="btn btn-primary" disabled={$disconnected} onclick={endPrint}>
+          {$tr("preview.print.cancel")}
+        </button>
+      {/if}
 
-    {#if printState !== "idle"}
-      <button type="button" class="btn btn-primary" disabled={$disconnected} onclick={endPrint}>
-        {$tr("preview.print.cancel")}
+      {#if !inline}
+        <button
+          type="button"
+          class="btn btn-secondary"
+          title={$tr("preview.print.system")}
+          onclick={onPrintOnSystemPrinter}>
+          <MdIcon icon="print" />
+        </button>
+      {/if}
+
+      <button type="button" class="btn btn-primary" disabled={$disconnected || printState !== "idle"} onclick={onPrint}>
+        {#if $disconnected}
+          {$tr("preview.not_connected")}
+        {:else}
+          <MdIcon icon="print" /> {$tr("preview.print")}
+        {/if}
       </button>
     {/if}
-
-    <button
-      type="button"
-      class="btn btn-secondary"
-      title={$tr("preview.print.system")}
-      onclick={onPrintOnSystemPrinter}>
-      <MdIcon icon="print" />
-    </button>
-
-    <button type="button" class="btn btn-primary" disabled={$disconnected || printState !== "idle"} onclick={onPrint}>
-      {#if $disconnected}
-        {$tr("preview.not_connected")}
-      {:else}
-        <MdIcon icon="print" /> {$tr("preview.print")}
-      {/if}
-    </button>
   {/snippet}
 </AppModal>
 
 <style>
+  :global(.preview-only-actions > .input-group),
+  :global(.preview-only-actions > .text-warning) {
+    display: none;
+  }
+
   canvas {
     image-rendering: pixelated;
     border: 1px solid #6d6d6d;

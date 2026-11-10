@@ -40,18 +40,23 @@
   import { CanvasUtils } from "$/utils/canvas_utils";
   import { appConfirm } from "$/stores/confirm";
 
-  type DialogName = "none" | "preview" | "label_props" | "saved_labels" | "csv_props" | "icon_picker" | "object_picker";
+  type DialogName = "none" | "saved_labels" | "icon_picker" | "object_picker";
+  type ViewMode = "edit" | "preview";
 
-  let htmlCanvas: HTMLCanvasElement;
+  let htmlCanvas = $state<HTMLCanvasElement>();
   let currentDialog = $state<DialogName>("none");
+  let viewMode = $state<ViewMode>("preview");
+  let showLabelSettings = $state<boolean>(false);
+  let showPrintSettings = $state<boolean>(false);
 
   let fabricCanvas = $state<CustomCanvas>();
+  let canvasInitialized = $state<boolean>(false);
   let labelProps = $state<LabelProps>(DEFAULT_LABEL_PROPS);
   let selectedObject = $state<fabric.FabricObject | undefined>(undefined);
   let selectedCount = $state<number>(0);
   let editRevision = $state<number>(0);
   let printNow = $state<boolean>(false);
-  let csvEnabled = $state<boolean>(false);
+  let csvEnabled = $state<boolean>(true);
   let windowWidth = $state<number>(0);
   let undoState = $state<UndoState>({ undoDisabled: false, redoDisabled: false });
   let zoomText = $state<string>("100%");
@@ -234,12 +239,12 @@
 
   const openPreview = () => {
     printNow = false;
-    currentDialog = "preview";
+    viewMode = "preview";
   };
 
   const openPreviewAndPrint = () => {
     printNow = true;
-    currentDialog = "preview";
+    viewMode = "preview";
   };
 
   const controlValueUpdated = () => {
@@ -349,7 +354,10 @@
       Toasts.error(e);
     }
 
-    LabelDesignerObjectHelper.addText(fabricCanvas!, $tr("editor.default_text"));
+    const firstVariable = LabelDesignerObjectHelper.addText(fabricCanvas!, "{var1}");
+    firstVariable.set({ left: 120, top: 30 });
+    const secondVariable = LabelDesignerObjectHelper.addText(fabricCanvas!, "{var2}");
+    secondVariable.set({ left: 120, top: 66 });
   };
 
   const renderOnFontsChanged = () => {
@@ -371,7 +379,7 @@
       Toasts.zodErrors(e, "Label parameters load error:");
     }
 
-    fabricCanvas = new CustomCanvas(htmlCanvas, {
+    fabricCanvas = new CustomCanvas(htmlCanvas!, {
       width: labelProps.size.width,
       height: labelProps.size.height,
     });
@@ -382,6 +390,7 @@
     fabricCanvas.setGridEnabled(!!$appConfig.gridEnabled);
 
     await loadDefaultLabel();
+    canvasInitialized = true;
 
     window.addEventListener("hashchange", loadLabelFromUrl);
     window.addEventListener("beforeunload", warnBeforeUnload);
@@ -518,7 +527,7 @@
   });
 
   $effect(() => {
-    if (currentDialog !== "preview") {
+    if (viewMode !== "preview") {
       printNow = false;
     }
   });
@@ -535,147 +544,186 @@
 <div class="image-editor">
   <div class="row mb-3">
     <div class="col d-flex justify-content-center">
-      <div class="canvas-wrapper print-start-{labelProps.printDirection}">
-        <canvas bind:this={htmlCanvas}></canvas>
-      </div>
-    </div>
-  </div>
-
-  <div class="row mb-1">
-    <div class="col d-flex justify-content-center">
-      <div class="toolbar d-flex flex-wrap gap-1 justify-content-center align-items-center">
-        <button class="btn btn-sm btn-secondary" onclick={() => (currentDialog = "label_props")}>
-          <MdIcon icon="settings" />
-        </button>
-
-        <button class="btn btn-sm btn-secondary" onclick={clearCanvas} title={$tr("editor.clear")}>
-          <MdIcon icon="cancel_presentation" />
-        </button>
-
-        <button class="btn btn-sm btn-secondary" onclick={() => (currentDialog = "saved_labels")}>
-          <MdIcon icon="sd_storage" />
-        </button>
-
+      <div class="btn-group" role="group" aria-label="Editor view">
         <button
-          class="btn btn-sm btn-secondary"
-          disabled={undoState.undoDisabled}
-          onclick={() => undo.undo()}
-          title={$tr("editor.undo")}>
-          <MdIcon icon="undo" />
-        </button>
-
-        <button
-          class="btn btn-sm btn-secondary"
-          disabled={undoState.redoDisabled}
-          onclick={() => undo.redo()}
-          title={$tr("editor.redo")}>
-          <MdIcon icon="redo" />
-        </button>
-
-        <button
-          class="btn btn-sm {$appConfig.gridEnabled ? 'btn-primary' : 'btn-secondary'}"
-          onclick={toggleGrid}
-          title={$tr("editor.grid")}>
-          <MdIcon icon="grid_on" />
-        </button>
-
-        <button class="btn btn-sm btn-secondary" onclick={() => fabricCanvas?.resetVirtualZoom()} title="Reset zoom">
-          {zoomText}
-        </button>
-
-        <button
-          class="btn btn-sm btn-{csvEnabled ? 'warning' : 'secondary'}"
-          title={$tr("params.csv.title")}
-          onclick={() => (currentDialog = "csv_props")}>
-          <MdIcon icon="dataset" />
-        </button>
-
-        <button
-          class="btn btn-sm btn-secondary"
-          title={$tr("editor.iconpicker.title")}
-          onclick={() => (currentDialog = "icon_picker")}>
-          <MdIcon icon="emoji_emotions" />
-          <MdIcon icon="add" />
-        </button>
-
-        <button
-          class="btn btn-sm btn-secondary"
-          title={$tr("editor.objectpicker.title")}
-          onclick={() => (currentDialog = "object_picker")}>
-          <MdIcon icon="format_shapes" />
-          <MdIcon icon="add" />
-        </button>
-
-        <button class="btn btn-sm btn-primary ms-1" onclick={openPreview}>
+          class="btn btn-sm {viewMode === 'preview' ? 'btn-primary' : 'btn-outline-primary'}"
+          aria-pressed={viewMode === "preview"}
+          onclick={openPreview}>
           <MdIcon icon="visibility" />
           {$tr("editor.preview")}
         </button>
         <button
-          title="Print with default or saved parameters"
-          class="btn btn-sm btn-primary ms-1"
-          onclick={openPreviewAndPrint}
-          disabled={$connectionState !== "connected"}><MdIcon icon="print" /> {$tr("editor.print")}</button>
+          class="btn btn-sm {viewMode === 'edit' ? 'btn-primary' : 'btn-outline-primary'}"
+          aria-pressed={viewMode === "edit"}
+          onclick={() => (viewMode = "edit")}>
+          <MdIcon icon="edit" />
+          {$tr("editor.edit")}
+        </button>
       </div>
     </div>
   </div>
 
-  <div class="row mb-1">
-    <div class="col d-flex justify-content-center">
-      <div class="toolbar d-flex flex-wrap gap-1 justify-content-center align-items-center">
-        {#if selectedCount > 0}
-          <button class="btn btn-sm btn-danger me-1" onclick={deleteSelected} title={$tr("editor.delete")}>
-            <MdIcon icon="delete" />
+  <div class:d-none={viewMode !== "edit"}>
+    <div class="row mb-3">
+      <div class="col d-flex justify-content-center">
+        <div class="canvas-wrapper print-start-{labelProps.printDirection}">
+          <canvas bind:this={htmlCanvas}></canvas>
+        </div>
+      </div>
+    </div>
+
+    <div class="row mb-1">
+      <div class="col d-flex justify-content-center">
+        <div class="toolbar d-flex flex-wrap gap-1 justify-content-center align-items-center">
+          <button
+            class="btn btn-sm {showLabelSettings ? 'btn-primary' : 'btn-secondary'}"
+            title={$tr("params.label.menu_title")}
+            aria-pressed={showLabelSettings}
+            onclick={() => (showLabelSettings = !showLabelSettings)}>
+            <MdIcon icon="settings" />
           </button>
-        {/if}
 
-        {#if selectedCount > 0}
-          <button class="btn btn-sm btn-secondary me-1" onclick={cloneSelected} title={$tr("editor.clone")}>
-            <MdIcon icon="content_copy" />
+          <button
+            class="btn btn-sm {showPrintSettings ? 'btn-primary' : 'btn-secondary'}"
+            title={$tr("preview.settings")}
+            aria-pressed={showPrintSettings}
+            onclick={() => (showPrintSettings = !showPrintSettings)}>
+            <MdIcon icon="tune" />
           </button>
-        {/if}
 
-        {#if selectedObject && selectedCount === 1}
-          <GenericObjectParamsControls {selectedObject} {editRevision} valueUpdated={controlValueUpdated} />
-        {/if}
+          <button class="btn btn-sm btn-secondary" onclick={clearCanvas} title={$tr("editor.clear")}>
+            <MdIcon icon="cancel_presentation" />
+          </button>
 
-        {#if selectedObject}
-          <VectorParamsControls {selectedObject} {editRevision} valueUpdated={controlValueUpdated} />
-        {/if}
+          <button class="btn btn-sm btn-secondary" onclick={() => (currentDialog = "saved_labels")}>
+            <MdIcon icon="sd_storage" />
+          </button>
 
-        {#if selectedObject instanceof fabric.IText}
-          <TextParamsControls selectedText={selectedObject} {editRevision} valueUpdated={controlValueUpdated} />
-        {/if}
+          <button
+            class="btn btn-sm btn-secondary"
+            disabled={undoState.undoDisabled}
+            onclick={() => undo.undo()}
+            title={$tr("editor.undo")}>
+            <MdIcon icon="undo" />
+          </button>
 
-        {#if selectedObject instanceof QRCode}
-          <QrCodeParamsPanel selectedQRCode={selectedObject} {editRevision} valueUpdated={controlValueUpdated} />
-        {/if}
+          <button
+            class="btn btn-sm btn-secondary"
+            disabled={undoState.redoDisabled}
+            onclick={() => undo.redo()}
+            title={$tr("editor.redo")}>
+            <MdIcon icon="redo" />
+          </button>
 
-        {#if selectedObject instanceof ArUcoMarker}
-          <ArUcoParamsPanel selectedArUco={selectedObject} {editRevision} valueUpdated={controlValueUpdated} />
-        {/if}
+          <button
+            class="btn btn-sm {$appConfig.gridEnabled ? 'btn-primary' : 'btn-secondary'}"
+            onclick={toggleGrid}
+            title={$tr("editor.grid")}>
+            <MdIcon icon="grid_on" />
+          </button>
 
-        {#if selectedObject instanceof Barcode}
-          <BarcodeParamsPanel selectedBarcode={selectedObject} {editRevision} valueUpdated={controlValueUpdated} />
-        {/if}
+          <button class="btn btn-sm btn-secondary" onclick={() => fabricCanvas?.resetVirtualZoom()} title="Reset zoom">
+            {zoomText}
+          </button>
 
-        {#if selectedObject instanceof fabric.IText || selectedObject instanceof QRCode || selectedObject instanceof Barcode}
-          <VariableInsertControl {selectedObject} valueUpdated={controlValueUpdated} />
-        {/if}
+          <button
+            class="btn btn-sm btn-secondary"
+            title={$tr("editor.iconpicker.title")}
+            onclick={() => (currentDialog = "icon_picker")}>
+            <MdIcon icon="emoji_emotions" />
+            <MdIcon icon="add" />
+          </button>
+
+          <button
+            class="btn btn-sm btn-secondary"
+            title={$tr("editor.objectpicker.title")}
+            onclick={() => (currentDialog = "object_picker")}>
+            <MdIcon icon="format_shapes" />
+            <MdIcon icon="add" />
+          </button>
+
+          <button
+            title="Print with default or saved parameters"
+            class="btn btn-sm btn-primary ms-1"
+            onclick={openPreviewAndPrint}
+            disabled={$connectionState !== "connected"}><MdIcon icon="print" /> {$tr("editor.print")}</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="row mb-1">
+      <div class="col d-flex justify-content-center">
+        <div class="toolbar d-flex flex-wrap gap-1 justify-content-center align-items-center">
+          {#if selectedCount > 0}
+            <button class="btn btn-sm btn-danger me-1" onclick={deleteSelected} title={$tr("editor.delete")}>
+              <MdIcon icon="delete" />
+            </button>
+          {/if}
+
+          {#if selectedCount > 0}
+            <button class="btn btn-sm btn-secondary me-1" onclick={cloneSelected} title={$tr("editor.clone")}>
+              <MdIcon icon="content_copy" />
+            </button>
+          {/if}
+
+          {#if selectedObject && selectedCount === 1}
+            <GenericObjectParamsControls {selectedObject} {editRevision} valueUpdated={controlValueUpdated} />
+          {/if}
+
+          {#if selectedObject}
+            <VectorParamsControls {selectedObject} {editRevision} valueUpdated={controlValueUpdated} />
+          {/if}
+
+          {#if selectedObject instanceof fabric.IText}
+            <TextParamsControls selectedText={selectedObject} {editRevision} valueUpdated={controlValueUpdated} />
+          {/if}
+
+          {#if selectedObject instanceof QRCode}
+            <QrCodeParamsPanel selectedQRCode={selectedObject} {editRevision} valueUpdated={controlValueUpdated} />
+          {/if}
+
+          {#if selectedObject instanceof ArUcoMarker}
+            <ArUcoParamsPanel selectedArUco={selectedObject} {editRevision} valueUpdated={controlValueUpdated} />
+          {/if}
+
+          {#if selectedObject instanceof Barcode}
+            <BarcodeParamsPanel selectedBarcode={selectedObject} {editRevision} valueUpdated={controlValueUpdated} />
+          {/if}
+
+          {#if selectedObject instanceof fabric.IText || selectedObject instanceof QRCode || selectedObject instanceof Barcode}
+            <VariableInsertControl {selectedObject} valueUpdated={controlValueUpdated} />
+          {/if}
+        </div>
       </div>
     </div>
   </div>
 
-  {#if currentDialog === "preview"}
+  {#if viewMode === "edit" && showLabelSettings}
+    <LabelPropsEditor inline onClose={() => (showLabelSettings = false)} onChange={onUpdateLabelProps} {labelProps} />
+  {/if}
+
+  {#if fabricCanvas && canvasInitialized}
     <PrintPreview
-      onClose={() => (currentDialog = "none")}
+      inline
+      onClose={() => (viewMode = "edit")}
       canvasCallback={getCanvasForPreview}
       {labelProps}
       {printNow}
       {csvEnabled}
-      csvData={$csvData.data} />
-  {:else if currentDialog === "label_props"}
-    <LabelPropsEditor onClose={() => (currentDialog = "none")} onChange={onUpdateLabelProps} {labelProps} />
-  {:else if currentDialog === "saved_labels"}
+      csvData={$csvData}
+      {viewMode}
+      {showPrintSettings} />
+  {/if}
+
+  {#if viewMode === "preview"}
+    <div class="row mt-3">
+      <div class="col">
+        <CsvControl bind:enabled={csvEnabled} onPlaceholderPicked={onCsvPlaceholderPicked} />
+      </div>
+    </div>
+  {/if}
+
+  {#if viewMode === "edit" && currentDialog === "saved_labels"}
     <SavedLabelsMenu
       onClose={() => (currentDialog = "none")}
       {onSave}
@@ -684,14 +732,9 @@
       {onLoadRequested}
       {csvEnabled}
       {hasUnsavedChanges} />
-  {:else if currentDialog === "csv_props"}
-    <CsvControl
-      onClose={() => (currentDialog = "none")}
-      bind:enabled={csvEnabled}
-      onPlaceholderPicked={onCsvPlaceholderPicked} />
-  {:else if currentDialog === "icon_picker"}
+  {:else if viewMode === "edit" && currentDialog === "icon_picker"}
     <IconPicker onSubmit={onIconPicked} onSubmitSvg={onSvgIconPicked} onClose={() => (currentDialog = "none")} />
-  {:else if currentDialog === "object_picker"}
+  {:else if viewMode === "edit" && currentDialog === "object_picker"}
     <ObjectPicker
       onSubmit={onObjectPicked}
       onClose={() => (currentDialog = "none")}

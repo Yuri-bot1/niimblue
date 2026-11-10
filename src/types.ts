@@ -1,5 +1,6 @@
 import { LabelType, printTaskNames } from "@mmote/niimbluelib";
 import * as fabric from "fabric";
+import { dsvFormat } from "d3-dsv";
 import { z } from "zod";
 
 export type ConnectionState = "connecting" | "connected" | "disconnected";
@@ -17,9 +18,26 @@ type _Range<T extends number, R extends unknown[]> = R["length"] extends T ? R[n
 
 export type Range<T extends number> = number extends T ? number : _Range<T, []>;
 
-export const CsvParamsSchema = z.object({
-  data: z.string(),
-});
+export const CsvParamsSchema = z
+  .object({
+    data: z.string(),
+    headers: z.string().optional(),
+    separator: z.enum([",", ";"]).optional(),
+  })
+  .transform((params) => {
+    const separator = params.separator ?? ",";
+    if (params.headers !== undefined) {
+      return { data: params.data, headers: params.headers, separator };
+    }
+
+    const parser = dsvFormat(separator);
+    const parsed = parser.parse(params.data);
+    return {
+      data: parser.formatRows(parsed.map((row) => parsed.columns.map((column) => row[column] ?? ""))),
+      headers: parser.formatRows([parsed.columns]),
+      separator,
+    };
+  });
 
 /** Not validated */
 export const FabricObjectSchema = z.custom<fabric.FabricObject>((val: any): boolean => {

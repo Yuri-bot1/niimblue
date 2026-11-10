@@ -29,9 +29,10 @@
     labelProps: LabelProps;
     onChange: (newProps: LabelProps) => void;
     onClose?: () => void;
+    inline?: boolean;
   }
 
-  let { labelProps, onChange, onClose }: Props = $props();
+  let { labelProps, onChange, onClose, inline = false }: Props = $props();
 
   const tailPositions: TailPosition[] = ["right", "bottom", "left", "top"];
   const printDirections: PrintDirection[] = ["left", "top"];
@@ -159,7 +160,11 @@
 
   const applyAndClose = () => {
     onApply();
-    modalRef.hide();
+    if (inline) {
+      onClose?.();
+    } else {
+      modalRef.hide();
+    }
   };
 
   const onLabelPresetDelete = (idx: number) => {
@@ -360,7 +365,7 @@
   });
 </script>
 
-<AppModal title={$tr("params.label.menu_title")} {onClose} bind:this={modalRef} size="lg">
+<AppModal title={$tr("params.label.menu_title")} {onClose} bind:this={modalRef} size="lg" {inline}>
   <div class="mb-1">
     <button class="btn btn-sm btn-outline-secondary" onclick={onImportClicked}>
       <MdIcon icon="data_object" />
